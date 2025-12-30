@@ -1009,6 +1009,15 @@ async def learn_novel_style(request: NovelStyleRequest, http_request: Request = 
     logger.info(f"   Request ID: {learn_request_id}")
     logger.info(f"   Client IP: {client_ip}")
     logger.info(f"   Story ID: {request.story_id}")
+    logger.info(f"   Title: {request.title}")
+    logger.info(f"   novel_text 제공: {'Yes (' + str(len(request.novel_text)) + ' chars)' if request.novel_text else 'No'}")
+    logger.info(f"   novel_s3_url: {request.novel_s3_url[:50] + '...' if request.novel_s3_url else 'None'}")
+    logger.info(f"   novel_s3_bucket: {request.novel_s3_bucket}")
+    logger.info(f"   novel_s3_key: {request.novel_s3_key}")
+    logger.info(f"   thumbnail_s3_url: {request.thumbnail_s3_url[:50] + '...' if request.thumbnail_s3_url else 'None'}")
+    logger.info(f"   thumbnail_s3_bucket: {request.thumbnail_s3_bucket}")
+    logger.info(f"   thumbnail_s3_key: {request.thumbnail_s3_key}")
+    logger.info(f"   기본 S3 버킷 (config): {config.S3_BUCKET_NAME}")
     
     # 중복 요청 확인
     cleanup_old_requests()
@@ -1074,18 +1083,22 @@ async def learn_novel_style(request: NovelStyleRequest, http_request: Request = 
         # 스타일 저장
         save_novel_style(request.story_id, style_data)
         
-        # 썸네일 이미지 생성 및 S3 업로드 (S3 정보가 제공된 경우)
-        if request.thumbnail_s3_url or (request.thumbnail_s3_bucket and request.thumbnail_s3_key):
+        # 썸네일 이미지 생성 및 S3 업로드
+        # S3 정보가 제공되거나, 기본 버킷이 설정된 경우 썸네일 생성
+        has_thumbnail_s3_info = request.thumbnail_s3_url or (request.thumbnail_s3_bucket and request.thumbnail_s3_key)
+        has_default_bucket = bool(config.S3_BUCKET_NAME)
+
+        if has_thumbnail_s3_info or has_default_bucket:
             try:
                 logger.info(f"📸 소설 썸네일 이미지 생성 시작: story_id={request.story_id}")
-                
+
                 # 썸네일 프롬프트 생성
                 thumbnail_prompt = await generate_thumbnail_prompt(
                     request.title,
                     style_data,
                     novel_text[:500] if novel_text else None
                 )
-                
+
                 logger.debug(f"🎨 썸네일 프롬프트: {thumbnail_prompt[:100]}...")
 
                 # 프롬프트 정제 (정책 우회 및 안전성 확보)
@@ -1094,19 +1107,24 @@ async def learn_novel_style(request: NovelStyleRequest, http_request: Request = 
 
                 # 이미지 생성
                 image_data = await generate_image_with_api(sanitized_thumbnail_prompt)
-                
-                # S3에 업로드
+
+                # S3에 업로드 (제공된 정보 또는 기본 버킷 사용)
+                thumbnail_s3_bucket = request.thumbnail_s3_bucket or config.S3_BUCKET_NAME
+                thumbnail_s3_key = request.thumbnail_s3_key or f"thumbnails/{request.story_id}/thumbnail.png"
+
                 thumbnail_url = await upload_image_to_s3(
                     image_data,
                     s3_url=request.thumbnail_s3_url,
-                    s3_bucket=request.thumbnail_s3_bucket,
-                    s3_key=request.thumbnail_s3_key or f"thumbnails/{request.story_id}/thumbnail.png"
+                    s3_bucket=thumbnail_s3_bucket,
+                    s3_key=thumbnail_s3_key
                 )
-                
+
                 logger.info(f"✅ 썸네일 이미지 S3 업로드 완료: {thumbnail_url}")
             except Exception as e:
                 logger.warning(f"⚠️ 썸네일 이미지 생성/업로드 실패 (스타일 학습은 성공): {str(e)}", exc_info=True)
                 # 썸네일 생성 실패해도 스타일 학습은 성공으로 처리
+        else:
+            logger.warning(f"⚠️ 썸네일 S3 정보가 제공되지 않고 기본 버킷도 설정되지 않아 썸네일 생성을 건너뜁니다.")
         
         return StyleAnalysisResponse(
             story_id=request.story_id,
