@@ -1083,7 +1083,7 @@ async def learn_novel_style(request: NovelStyleRequest, http_request: Request = 
                 thumbnail_prompt = await generate_thumbnail_prompt(
                     request.title,
                     style_data,
-                    request.novel_text[:500] if request.novel_text else None
+                    novel_text[:500] if novel_text else None
                 )
                 
                 logger.debug(f"🎨 썸네일 프롬프트: {thumbnail_prompt[:100]}...")
