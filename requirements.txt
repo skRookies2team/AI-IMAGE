@@ -1,0 +1,12 @@
+python-dotenv
+google-cloud-aiplatform
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+httpx
+aiohttp
+requests
+Pillow
+boto3
+
