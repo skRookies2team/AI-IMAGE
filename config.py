@@ -31,6 +31,10 @@ class Config:
     # 이미지 생성 API 설정
     IMAGE_GENERATION_API: str = os.getenv("IMAGE_GENERATION_API", "imagen")  # "imagen", "dalle", "placeholder"
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
+    # 이미지 해상도 설정 (720p = 1280x720)
+    IMAGE_WIDTH: int = int(os.getenv("IMAGE_WIDTH", "1280"))
+    IMAGE_HEIGHT: int = int(os.getenv("IMAGE_HEIGHT", "720"))
     
     # AWS S3 설정
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")

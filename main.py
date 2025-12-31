@@ -45,6 +45,14 @@ try:
 except ImportError:
     S3_AVAILABLE = False
 
+# PIL import (이미지 리사이즈용)
+try:
+    from PIL import Image
+    import io
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
 # 설정 모듈 import
 from config import config
 
@@ -285,6 +293,44 @@ def _is_imagen_safety_block_error(err: Exception) -> bool:
     return any(k in msg for k in keywords)
 
 
+def resize_image_to_target(image_bytes: bytes, target_width: int, target_height: int) -> bytes:
+    """
+    이미지를 목표 해상도로 리사이즈
+
+    Args:
+        image_bytes: 원본 이미지 바이너리 데이터
+        target_width: 목표 너비 (기본값: config.IMAGE_WIDTH)
+        target_height: 목표 높이 (기본값: config.IMAGE_HEIGHT)
+
+    Returns:
+        리사이즈된 이미지의 바이너리 데이터 (PNG)
+    """
+    if not PIL_AVAILABLE:
+        logger.warning("⚠️ PIL이 설치되지 않아 리사이즈를 건너뜁니다.")
+        return image_bytes
+
+    try:
+        # 바이트 데이터를 이미지로 변환
+        img = Image.open(io.BytesIO(image_bytes))
+        original_size = img.size
+
+        # 목표 크기로 리사이즈 (고품질 리샘플링)
+        img_resized = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+        # PNG 형식으로 바이트 변환
+        output_buffer = io.BytesIO()
+        img_resized.save(output_buffer, format='PNG', optimize=True)
+        resized_bytes = output_buffer.getvalue()
+
+        logger.info(f"📐 이미지 리사이즈 완료: {original_size} → ({target_width}, {target_height})")
+        logger.info(f"   용량 변화: {len(image_bytes):,} bytes → {len(resized_bytes):,} bytes")
+
+        return resized_bytes
+    except Exception as e:
+        logger.warning(f"⚠️ 이미지 리사이즈 실패: {e}")
+        return image_bytes
+
+
 async def generate_image_with_api(enhanced_prompt: str) -> bytes:
     """
     이미지 생성 API를 사용하여 이미지 생성
@@ -302,16 +348,16 @@ async def generate_image_with_api(enhanced_prompt: str) -> bytes:
         try:
             from vertexai.preview.vision_models import ImageGenerationModel
 
-            # Imagen 모델 초기화
-            imagen_model = ImageGenerationModel.from_pretrained("imagegeneration@006")
+            # Imagen 4 Fast 모델 초기화 (더 빠른 생성 속도)
+            imagen_model = ImageGenerationModel.from_pretrained("imagen-4.0-fast-generate-001")
 
-            logger.info("🖼️ Imagen API로 이미지 생성 중... (단일 시도)")
+            logger.info("🖼️ Imagen 4 Fast API로 이미지 생성 중...")
 
-            # 이미지 생성 (1024x1024)
+            # 이미지 생성 (16:9 비율로 720p에 적합)
             response = imagen_model.generate_images(
                 prompt=enhanced_prompt,
                 number_of_images=1,
-                aspect_ratio="1:1",
+                aspect_ratio="16:9",
                 safety_filter_level="block_some",
                 person_generation="allow_adult",
             )
@@ -366,8 +412,16 @@ async def generate_image_with_api(enhanced_prompt: str) -> bytes:
                 )
 
             logger.info("✅ 이미지 생성 성공")
-            logger.info(f"📦 생성된 이미지 데이터 크기: {len(image_bytes)} bytes")
-            return bytes(image_bytes)
+            logger.info(f"📦 원본 이미지 데이터 크기: {len(image_bytes)} bytes")
+
+            # 720p로 리사이즈 (config에서 설정값 사용)
+            resized_image_bytes = resize_image_to_target(
+                bytes(image_bytes),
+                config.IMAGE_WIDTH,
+                config.IMAGE_HEIGHT
+            )
+
+            return resized_image_bytes
 
         except ImportError:
             logger.warning("⚠️ Imagen API를 사용할 수 없습니다.")
