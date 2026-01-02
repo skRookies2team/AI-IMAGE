@@ -212,7 +212,7 @@ async def upload_image_to_s3_presigned_url(
                     "Content-Type": content_type,
                     "Content-Length": str(len(image_bytes))
                 },
-                timeout=30.0
+                timeout=60.0
             )
 
             if response.status_code in [200, 204]:
