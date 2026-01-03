@@ -267,14 +267,17 @@ async def generate_image(request: ImageGenerationRequest, http_request: Request 
         """실제 이미지 생성 처리"""
         try:
             # 소설 스타일 로드
+            logger.debug(f"[스타일 로드 시도] Story ID: {request.story_id}")
             novel_style = load_novel_style(request.story_id)
             if not novel_style:
+                logger.error(f"[스타일 정보 없음] Story ID: {request.story_id} - 먼저 /api/v1/learn-style 호출 필요")
                 raise HTTPException(
                     status_code=404,
                     detail=f"스토리 ID {request.story_id}의 스타일 정보가 없습니다. 먼저 스타일을 학습해주세요."
                 )
 
             logger.info(f"[처리 시작] Request ID: {request_id}")
+            logger.debug(f"   스타일 정보 로드 완료: atmosphere={novel_style.get('atmosphere')}, visual_style={novel_style.get('visual_style')}")
 
             # 프롬프트 개선
             enhanced_prompt = await generate_enhanced_prompt(

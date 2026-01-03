@@ -85,6 +85,7 @@ async def generate_image_with_api(enhanced_prompt: str) -> bytes:
             logger.info("Imagen 4 Fast API로 이미지 생성 중...")
 
             # 이미지 생성 (16:9 비율로 720p에 적합)
+            logger.debug(f"Imagen API 호출 파라미터: aspect_ratio=16:9, safety_filter=block_some, person_generation=allow_adult")
             response = imagen_model.generate_images(
                 prompt=enhanced_prompt,
                 number_of_images=1,
@@ -94,23 +95,33 @@ async def generate_image_with_api(enhanced_prompt: str) -> bytes:
             )
 
             # 생성된 이미지(들) 가져오기
+            logger.debug(f"Imagen API 응답 타입: {type(response)}")
+            logger.debug(f"Imagen API 응답 속성: {dir(response) if response else 'None'}")
+
             images = None
             if response is None:
+                logger.warning("Imagen API 응답이 None입니다")
                 images = []
             elif isinstance(response, (list, tuple)):
+                logger.debug(f"응답이 리스트/튜플 형태: {len(response)}개 항목")
                 images = list(response)
             elif hasattr(response, "images"):
                 try:
                     images = list(getattr(response, "images"))
-                except Exception:
+                    logger.debug(f"response.images에서 {len(images)}개 이미지 추출")
+                except Exception as e:
+                    logger.warning(f"response.images 접근 실패: {e}")
                     images = []
             else:
                 try:
                     images = list(response)
-                except Exception:
+                    logger.debug(f"응답을 리스트로 변환: {len(images)}개 항목")
+                except Exception as e:
+                    logger.warning(f"응답을 리스트로 변환 실패: {e}")
                     images = []
 
             if not images:
+                logger.error(f"Imagen API 응답이 비어있음 - response 타입: {type(response)}, 프롬프트: {enhanced_prompt[:100]}")
                 raise HTTPException(
                     status_code=422,
                     detail={
@@ -122,13 +133,19 @@ async def generate_image_with_api(enhanced_prompt: str) -> bytes:
                 )
 
             generated_image = images[0]
+            logger.debug(f"생성된 이미지 객체 타입: {type(generated_image)}")
+            logger.debug(f"생성된 이미지 객체 속성: {dir(generated_image)}")
 
             # 이미지를 bytes로 변환
             image_bytes = getattr(generated_image, "_image_bytes", None)
             if image_bytes is None and hasattr(generated_image, "image_bytes"):
                 image_bytes = getattr(generated_image, "image_bytes")
 
+            logger.debug(f"이미지 바이트 추출 결과: type={type(image_bytes)}, is_bytes={isinstance(image_bytes, (bytes, bytearray))}")
+
             if not isinstance(image_bytes, (bytes, bytearray)):
+                logger.error(f"이미지 바이트 변환 실패 - image_bytes 타입: {type(image_bytes)}, 값: {str(image_bytes)[:200] if image_bytes else 'None'}")
+                logger.error(f"generated_image 속성: {[attr for attr in dir(generated_image) if not attr.startswith('_')]}")
                 raise HTTPException(
                     status_code=502,
                     detail={
@@ -163,7 +180,12 @@ async def generate_image_with_api(enhanced_prompt: str) -> bytes:
                 },
             )
         except Exception as e:
-            logger.warning(f"Imagen API 호출 중 오류: {e}")
+            logger.error(f"Imagen API 호출 중 오류 발생")
+            logger.error(f"   예외 타입: {type(e).__name__}")
+            logger.error(f"   예외 메시지: {str(e)}")
+            logger.error(f"   프롬프트: {enhanced_prompt[:200]}")
+            logger.error(f"   요청 파라미터: aspect_ratio=16:9, safety_filter=block_some, person_generation=allow_adult")
+
             if is_imagen_safety_block_error(e):
                 raise HTTPException(
                     status_code=422,
